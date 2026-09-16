@@ -20,9 +20,11 @@ make demo1
 Manual equivalent:
 
 ```bash
-docker compose exec -T runner python demos/01-s3-lambda-notification/deploy.py
-docker compose exec -T runner python demos/01-s3-lambda-notification/trigger_and_wait.py
+docker compose exec -T runner uv run python demos/01-s3-lambda-notification/deploy.py
+docker compose exec -T runner uv run python demos/01-s3-lambda-notification/trigger_and_wait.py
 ```
+
+Or step through it live, one AWS call at a time, in [`notebook/masterclass_demo.ipynb`](../../notebook/masterclass_demo.ipynb) (`make notebook`).
 
 ## Expected result
 

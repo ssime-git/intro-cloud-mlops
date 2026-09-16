@@ -7,5 +7,9 @@ __pycache__/
 # Build artifacts
 *.zip
 
+# Jupyter / euporie
+.ipynb_checkpoints/
+notebook/.ipynb_checkpoints/
+
 # OS
 .DS_Store

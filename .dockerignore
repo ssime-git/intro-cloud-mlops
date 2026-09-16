@@ -1,0 +1,8 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.zip
+.ipynb_checkpoints
+notebook/.ipynb_checkpoints

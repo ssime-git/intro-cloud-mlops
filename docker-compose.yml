@@ -24,7 +24,9 @@ services:
       - floci_default
 
   runner:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: runner
     command: sleep infinity
     working_dir: /work

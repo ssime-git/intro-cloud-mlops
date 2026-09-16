@@ -1,6 +1,6 @@
 # intro-cloud-mlops
 
-Demos for an AWS/MLOps masterclass using [Floci](https://github.com/floci-io/floci), a local AWS emulator (open-source alternative to LocalStack), driven entirely through Docker containers — nothing is installed on the host machine.
+Demos for an AWS/MLOps masterclass using [Floci](https://github.com/floci-io/floci), a local AWS emulator (open-source alternative to LocalStack), driven entirely through Docker containers — nothing is installed on the host machine. Dependencies inside the containers are managed with [uv](https://docs.astral.sh/uv/).
 
 ## Why Floci?
 
@@ -12,14 +12,15 @@ Floci runs locally, for free, and exposes an AWS-compatible API (S3, Lambda, IAM
 - `make`
 - [`gh`](https://cli.github.com/) only if you republish this repo
 
-No other tool is required on the host machine: Python, boto3 and zip all run inside containers.
+No other tool is required on the host machine: Python, uv, boto3 and Euporie all run inside containers, resolved from `uv.lock`.
 
 ## Quick start
 
 ```bash
-make up          # start Floci + the Python runner container (boto3)
+make up          # build the runner image (uv sync), start Floci + runner
 make demo1        # demo 1: S3 -> Lambda notification
 make demo2        # demo 2: IAM policy enforcement
+make notebook      # live, step-by-step walkthrough of both demos (Euporie)
 make down         # stop and clean up everything (containers, network)
 ```
 
@@ -27,11 +28,14 @@ make down         # stop and clean up everything (containers, network)
 
 ```
 .
-├── docker-compose.yml          # Floci + runner container (python:3.12-slim + boto3)
-├── Makefile                    # up/down/demo1/demo2/test/logs/clean targets
+├── Dockerfile                  # runner image: uv + Python 3.12, deps from uv.lock
+├── pyproject.toml / uv.lock     # dependency manifest, resolved & locked with uv
+├── docker-compose.yml          # Floci + runner container
+├── Makefile                    # up/down/demo1/demo2/notebook/test/clean targets
 ├── demos/
 │   ├── 01-s3-lambda-notification/   # S3 upload -> automatic Lambda trigger
 │   └── 02-iam-policy-enforcement/   # IAM deny/allow with policies
+├── notebook/                   # Euporie notebook for live presentation
 └── tests/                      # unit tests (CSV transform, no S3/Floci needed)
 ```
 
@@ -48,6 +52,33 @@ See [demos/01-s3-lambda-notification/README.md](demos/01-s3-lambda-notification/
 Demonstrates that Floci actually enforces IAM policies when `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`: a `junior` user with no permissions is denied `s3:ListAllMyBuckets` (403 `AccessDenied`), then allowed once an inline policy is attached.
 
 See [demos/02-iam-policy-enforcement/README.md](demos/02-iam-policy-enforcement/README.md).
+
+## Live walkthrough notebook (Euporie)
+
+[`notebook/masterclass_demo.ipynb`](notebook/masterclass_demo.ipynb) drives both demos as a terminal Jupyter notebook, one AWS call per cell — no `deploy.py`/`run_demo.py` black boxes, so every mechanism (IAM role, least-privilege policy, permission, event notification, IAM deny/allow) is visible and can be run, discussed, and re-run live during the masterclass.
+
+```bash
+make up
+make notebook
+```
+
+`make notebook` registers a Jupyter kernel for the uv-managed venv and opens the notebook in [Euporie](https://github.com/joouha/euporie)'s terminal UI. Demo 2's cells need Floci restarted with IAM enforcement first — run `make floci-iam-on` in another terminal before reaching that section (instructions are also in the notebook itself).
+
+To sanity-check the whole notebook non-interactively (e.g. after editing it):
+
+```bash
+make notebook-test
+```
+
+## Dependency management (uv)
+
+Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`, split into groups:
+
+- base (`boto3`) — what the demo scripts need
+- `dev` (`pytest`, `ruff`, `nbclient`) — testing and linting
+- `notebook` (`euporie`, `ipykernel`, `jupyter-client`) — the live walkthrough
+
+The runner image installs all groups at build time (`uv sync --frozen --all-groups`) into `/opt/venv`, kept outside the bind-mounted repo so the Linux venv never leaks onto the host filesystem. `make up` re-runs `uv sync` after starting the containers, so editing `pyproject.toml` and re-running `make up` picks up new dependencies without a full rebuild. To add a dependency yourself, edit `pyproject.toml` and run `uv lock` (from a container, e.g. `docker compose exec runner uv lock`, or with `uv` installed locally) to update `uv.lock`, then commit both files.
 
 ## Security
 

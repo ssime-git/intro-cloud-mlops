@@ -20,6 +20,8 @@ make up
 make demo2
 ```
 
+Or step through it live, one AWS call at a time, in [`notebook/masterclass_demo.ipynb`](../../notebook/masterclass_demo.ipynb) (`make floci-iam-on` then `make notebook`).
+
 ## Expected result
 
 ```
