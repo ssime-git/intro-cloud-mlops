@@ -52,7 +52,7 @@ notebook: notebook-setup
 # Headless regression check: executes every cell and fails on the first
 # error. Requires IAM enforcement to be on for the demo 2 cells to behave
 # as documented.
-notebook-test: floci-iam-on
+notebook-test: floci-iam-on notebook-setup
 	docker compose exec -T runner uv run jupyter execute notebook/masterclass_demo.ipynb
 
 down:
