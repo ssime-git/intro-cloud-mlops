@@ -1,0 +1,37 @@
+services:
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    user: root
+    ports:
+      - "4566:4566"
+    environment:
+      FLOCI_SERVICES_DOCKER_NETWORK: floci_default
+      FLOCI_HOSTNAME: floci
+      FLOCI_BASE_URL: http://floci:4566
+      FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: "${FLOCI_IAM_ENFORCEMENT:-false}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - floci_default
+
+  runner:
+    image: python:3.12-slim
+    container_name: runner
+    command: sleep infinity
+    working_dir: /work
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      FLOCI_ENDPOINT: http://floci:4566
+    volumes:
+      - .:/work
+    networks:
+      - floci_default
+    depends_on:
+      - floci
+
+networks:
+  floci_default:
+    name: floci_default
