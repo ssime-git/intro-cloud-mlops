@@ -15,6 +15,12 @@ s3 = boto3.client("s3", endpoint_url=ENDPOINT)
 
 def main():
     content = b"score\n0.9\n0.2\n0.7\n"
+
+    # Delete any output left over from a previous run of this demo, so a
+    # stale out/scores.csv can't make this run look successful before the
+    # Lambda has actually fired.
+    s3.delete_object(Bucket=BUCKET, Key="out/scores.csv")
+
     start = time.time()
     s3.put_object(Bucket=BUCKET, Key="in/scores.csv", Body=content)
     print("Uploaded in/scores.csv, waiting for out/scores.csv "

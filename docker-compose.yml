@@ -1,16 +1,24 @@
 services:
   floci:
-    image: floci/floci:latest
+    # Pinned to the version this demo was validated against. Bump deliberately.
+    image: floci/floci:2.1.0
     container_name: floci
     user: root
     ports:
-      - "4566:4566"
+      # Bound to loopback only: 4566 exposes an emulator with no auth by
+      # default and this stack is meant for local demo use, not to be
+      # reachable from the network.
+      - "127.0.0.1:4566:4566"
     environment:
       FLOCI_SERVICES_DOCKER_NETWORK: floci_default
       FLOCI_HOSTNAME: floci
       FLOCI_BASE_URL: http://floci:4566
       FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: "${FLOCI_IAM_ENFORCEMENT:-false}"
     volumes:
+      # Required so Floci can launch the Lambda runtime containers itself
+      # (sibling-container pattern). This effectively grants the floci
+      # container root access to the Docker host — only run trusted images
+      # this way, and keep it to local/demo environments.
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - floci_default

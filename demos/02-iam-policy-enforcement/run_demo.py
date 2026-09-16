@@ -3,10 +3,13 @@
 Requires Floci started with FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true
 (see the `demo2` Makefile target / docker-compose.yml).
 
-1. Creates IAM user `junior` and an access key for them (admin creds).
+1. Resets `junior` to a clean state (no policy, one fresh access key).
 2. Calls s3.list_buckets() as `junior` -> expects AccessDenied (403).
 3. Attaches an inline policy allowing s3:ListAllMyBuckets on *.
 4. Calls s3.list_buckets() as `junior` again -> expects success.
+
+Idempotent: safe to re-run without accumulating access keys or leaving
+the allow policy attached from a previous run.
 """
 import json
 import os
@@ -17,17 +20,26 @@ from botocore.exceptions import ClientError
 
 ENDPOINT = os.environ.get("FLOCI_ENDPOINT", "http://floci:4566")
 USER = "junior"
+POLICY_NAME = "AllowListBuckets"
 
 admin_iam = boto3.client(
     "iam", endpoint_url=ENDPOINT, aws_access_key_id="test", aws_secret_access_key="test"
 )
 
 
-def ensure_user_and_key():
+def reset_user_and_get_fresh_key():
+    """Ensures `junior` exists with no inline policies and exactly one
+    (fresh) access key, so the demo behaves the same on every run."""
     try:
         admin_iam.create_user(UserName=USER)
     except admin_iam.exceptions.EntityAlreadyExistsException:
         pass
+
+    for policy_name in admin_iam.list_user_policies(UserName=USER)["PolicyNames"]:
+        admin_iam.delete_user_policy(UserName=USER, PolicyName=policy_name)
+
+    for key in admin_iam.list_access_keys(UserName=USER)["AccessKeyMetadata"]:
+        admin_iam.delete_access_key(UserName=USER, AccessKeyId=key["AccessKeyId"])
 
     key = admin_iam.create_access_key(UserName=USER)
     return key["AccessKey"]["AccessKeyId"], key["AccessKey"]["SecretAccessKey"]
@@ -50,27 +62,29 @@ def attach_allow_list_buckets_policy():
         ],
     }
     admin_iam.put_user_policy(
-        UserName=USER, PolicyName="AllowListBuckets", PolicyDocument=json.dumps(policy_doc)
+        UserName=USER, PolicyName=POLICY_NAME, PolicyDocument=json.dumps(policy_doc)
     )
 
 
 def main():
-    print("Creating IAM user 'junior' and access key...")
-    access_key, secret_key = ensure_user_and_key()
+    print("Resetting IAM user 'junior' to a clean state (no policy, fresh key)...")
+    access_key, secret_key = reset_user_and_get_fresh_key()
     s3_as_junior = junior_s3_client(access_key, secret_key)
 
-    print("\nStep 1: list_buckets() as junior (no policy attached yet) -> expecting AccessDenied")
+    print("\nStep 1: list_buckets() as junior (no policy attached) -> expecting AccessDenied")
     try:
         s3_as_junior.list_buckets()
-        print("UNEXPECTED SUCCESS — IAM enforcement may not be enabled "
-              "(check FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true)")
+        raise SystemExit(
+            "UNEXPECTED SUCCESS — IAM enforcement is not active. Check that Floci was "
+            "started with FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true (see `make demo2`)."
+        )
     except ClientError as e:
         code = e.response["Error"].get("Code")
         message = e.response["Error"].get("Message")
         status = e.response["ResponseMetadata"].get("HTTPStatusCode")
         print(f"  -> {status} {code}: {message}")
 
-    print("\nAttaching inline policy AllowListBuckets (s3:ListAllMyBuckets on *)...")
+    print(f"\nAttaching inline policy {POLICY_NAME} (s3:ListAllMyBuckets on *)...")
     attach_allow_list_buckets_policy()
 
     print("\nStep 2: list_buckets() as junior again -> expecting success")

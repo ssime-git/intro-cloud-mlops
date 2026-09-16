@@ -1,4 +1,4 @@
-.PHONY: up down logs wait demo1 demo2 clean
+.PHONY: up down logs wait demo1 demo2 clean test
 
 up:
 	docker compose up -d
@@ -8,9 +8,10 @@ up:
 wait:
 	@echo "Waiting for Floci to be ready..."
 	@for i in $$(seq 1 60); do \
-		docker compose exec -T runner python -c "import urllib.request as u; u.urlopen('http://floci:4566/_floci/health')" 2>/dev/null && break; \
+		docker compose exec -T runner python -c "import urllib.request as u; u.urlopen('http://floci:4566/_floci/health')" 2>/dev/null && exit 0; \
 		sleep 2; \
-	done
+	done; \
+	echo "Floci did not become ready within 120s" >&2; exit 1
 	@echo "Floci is up."
 
 logs:
@@ -25,11 +26,12 @@ demo2:
 	$(MAKE) wait
 	docker compose exec -T runner python demos/02-iam-policy-enforcement/run_demo.py
 
+test:
+	docker compose exec -T runner pip install -q -r requirements.txt pytest
+	docker compose exec -T runner python -m pytest -q
+
 down:
 	docker compose down -v
-	-docker rm -f $$(docker ps -aq --filter network=floci_default) 2>/dev/null
-	-docker network rm floci_default 2>/dev/null
 
 clean: down
 	rm -f demos/01-s3-lambda-notification/predict.zip
-	rm -f demos/02-iam-policy-enforcement/junior_creds.json

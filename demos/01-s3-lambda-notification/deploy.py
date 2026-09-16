@@ -46,9 +46,37 @@ def ensure_role():
     except iam.exceptions.EntityAlreadyExistsException:
         role_arn = iam.get_role(RoleName=ROLE_NAME)["Role"]["Arn"]
 
-    iam.attach_role_policy(
+    # Scoped to exactly what the handler needs: read from in/, write to out/,
+    # plus basic CloudWatch Logs permissions (the AWS Lambda execution-role
+    # baseline). No AdministratorAccess for a function that only touches S3.
+    execution_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{BUCKET}/in/*"],
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["s3:PutObject"],
+                "Resource": [f"arn:aws:s3:::{BUCKET}/out/*"],
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                "Resource": "arn:aws:logs:*:*:*",
+            },
+        ],
+    }
+    iam.put_role_policy(
         RoleName=ROLE_NAME,
-        PolicyArn="arn:aws:iam::aws:policy/AdministratorAccess",
+        PolicyName="predict-execution-policy",
+        PolicyDocument=json.dumps(execution_policy),
     )
     return role_arn
 

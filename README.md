@@ -28,11 +28,11 @@ make down         # arrête et nettoie tout (conteneurs, réseau)
 ```
 .
 ├── docker-compose.yml          # Floci + conteneur runner (python:3.12-slim + boto3)
-├── Makefile                    # cibles up/down/demo1/demo2/logs/clean
+├── Makefile                    # cibles up/down/demo1/demo2/test/logs/clean
 ├── demos/
 │   ├── 01-s3-lambda-notification/   # dépôt S3 -> déclenchement Lambda automatique
 │   └── 02-iam-policy-enforcement/   # refus/autorisation IAM avec policies
-└── scripts/                    # utilitaires partagés
+└── tests/                      # tests unitaires (transform CSV, sans S3/Floci)
 ```
 
 Chaque démo a son propre `README.md` avec le déroulé pas à pas et le résultat attendu.
@@ -48,6 +48,10 @@ Voir [demos/01-s3-lambda-notification/README.md](demos/01-s3-lambda-notification
 Démontre que Floci applique réellement les policies IAM quand `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true` : un utilisateur `junior` sans permissions se voit refuser `s3:ListAllMyBuckets` (403 `AccessDenied`), puis autorisé après l'attachement d'une policy en ligne.
 
 Voir [demos/02-iam-policy-enforcement/README.md](demos/02-iam-policy-enforcement/README.md).
+
+## Sécurité
+
+Le conteneur Floci reçoit `/var/run/docker.sock` monté en volume, avec `user: root`, pour pouvoir lancer lui-même les conteneurs runtime Lambda (pattern "sibling container"). Cela lui donne de fait un accès root à l'hôte Docker. C'est nécessaire pour émuler Lambda, mais à réserver à un usage local/démo, sur une image de confiance — jamais en environnement partagé ou exposé. Le port 4566 est donc aussi lié à `127.0.0.1` uniquement.
 
 ## Notes / écarts avec AWS réel
 
