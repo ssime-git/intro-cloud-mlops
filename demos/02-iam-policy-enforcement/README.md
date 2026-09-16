@@ -1,38 +1,38 @@
-# Démo 2 — Application des politiques IAM
+# Demo 2 — IAM policy enforcement
 
-Démontre que Floci applique réellement les policies IAM quand l'enforcement est activé.
+Demonstrates that Floci actually enforces IAM policies once enforcement is turned on.
 
-## Prérequis
+## Prerequisites
 
-Floci doit être démarré avec `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`. La cible `make demo2` redémarre le service `floci` avec ce flag automatiquement.
+Floci must be started with `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`. The `make demo2` target restarts the `floci` service with this flag automatically.
 
-## Déroulé
+## Walkthrough
 
-1. Avec les identifiants admin `test`/`test` (qui contournent l'enforcement), création de l'utilisateur IAM `junior` et de sa clé d'accès.
-2. Avec les clés de `junior`, appel de `s3.list_buckets()` → **403 AccessDenied** attendu.
-3. Toujours avec `test`/`test`, attachement d'une policy en ligne autorisant `s3:ListAllMyBuckets` sur `*`.
-4. Avec les clés de `junior`, nouvel appel `s3.list_buckets()` → succès attendu.
+1. Using the admin credentials `test`/`test` (which bypass enforcement), reset the IAM user `junior` to a clean state (no policy, fresh access key).
+2. Using `junior`'s keys, call `s3.list_buckets()` → expect **403 AccessDenied**.
+3. Still as `test`/`test`, attach an inline policy allowing `s3:ListAllMyBuckets` on `*`.
+4. Using `junior`'s keys again, call `s3.list_buckets()` → expect success.
 
-## Lancer la démo
+## Run the demo
 
 ```bash
 make up
 make demo2
 ```
 
-## Résultat attendu
+## Expected result
 
 ```
-Step 1: list_buckets() as junior (no policy attached yet) -> expecting AccessDenied
+Step 1: list_buckets() as junior (no policy attached) -> expecting AccessDenied
   -> 403 AccessDenied: User is not authorized to perform: s3:ListAllMyBuckets
 
 Attaching inline policy AllowListBuckets (s3:ListAllMyBuckets on *)...
 
 Step 2: list_buckets() as junior again -> expecting success
-  -> SUCCESS after 0.01s, buckets: []
+  -> SUCCESS after 0.00s, buckets: []
 ```
 
-## Point pédagogique
+## Teaching point
 
-- Sans `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, **toutes** les actions sont autorisées quels que soient les identifiants — l'enforcement IAM est désactivé par défaut.
-- La propagation d'une policy est instantanée dans Floci, contrairement à AWS réel où un léger délai de propagation peut être observé.
+- Without `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`, **every** action is allowed regardless of the caller's identity — IAM enforcement is disabled by default.
+- Policy propagation is instantaneous in Floci, unlike real AWS where a short propagation delay can be observed.

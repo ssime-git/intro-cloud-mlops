@@ -1,30 +1,30 @@
-# Démo 1 — Notification S3 → Lambda
+# Demo 1 — S3 → Lambda notification
 
-Une Lambda Python 3.12 (`predict`) est déclenchée automatiquement par une notification S3 quand un objet est créé sous le préfixe `in/` du bucket `demo`. Elle lit le CSV, ajoute une colonne `prediction` (`1` si `score > 0.5`, sinon `0`), et écrit le résultat sous `out/` avec le même nom de fichier.
+A Python 3.12 Lambda (`predict`) is automatically triggered by an S3 notification when an object is created under the `in/` prefix of the `demo` bucket. It reads the CSV, adds a `prediction` column (`1` if `score > 0.5`, else `0`), and writes the result under `out/` with the same file name.
 
-## Ressources créées
+## Resources created
 
-- Rôle IAM `lambda-exec-role` (trust policy `lambda.amazonaws.com`)
-- Fonction Lambda `predict` (runtime `python3.12`, zip, timeout 60s)
-- Bucket S3 `demo`
-- Permission Lambda `lambda:InvokeFunction` pour le principal `s3.amazonaws.com`
-- Notification S3 `s3:ObjectCreated:*` filtrée sur le préfixe `in/`
+- IAM role `lambda-exec-role` (trust policy `lambda.amazonaws.com`), with an inline policy scoped to S3 read on `demo/in/*`, S3 write on `demo/out/*`, and CloudWatch Logs
+- Lambda function `predict` (runtime `python3.12`, zip, 60s timeout)
+- S3 bucket `demo`
+- Lambda permission `lambda:InvokeFunction` for the `s3.amazonaws.com` principal
+- S3 notification `s3:ObjectCreated:*` filtered on the `in/` prefix
 
-## Lancer la démo
+## Run the demo
 
 ```bash
 make up
 make demo1
 ```
 
-Équivalent manuel :
+Manual equivalent:
 
 ```bash
 docker compose exec -T runner python demos/01-s3-lambda-notification/deploy.py
 docker compose exec -T runner python demos/01-s3-lambda-notification/trigger_and_wait.py
 ```
 
-## Résultat attendu
+## Expected result
 
 ```
 score,prediction
@@ -33,4 +33,4 @@ score,prediction
 0.7,1
 ```
 
-Délai typique observé : ~30 s au premier déclenchement (téléchargement de l'image runtime Lambda `public.ecr.aws/lambda/python:3.12`), nettement plus rapide ensuite.
+Typical delay observed: ~30s on the first trigger (downloading the `public.ecr.aws/lambda/python:3.12` runtime image), much faster afterwards.
