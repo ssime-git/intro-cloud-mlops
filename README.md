@@ -8,9 +8,8 @@ Floci runs locally, for free, and exposes an AWS-compatible API (S3, Lambda, IAM
 
 ## Prerequisites
 
-- Docker (tested with [OrbStack](https://orbstack.dev/) on macOS, but any Docker engine works)
+- Docker
 - `make`
-- [`gh`](https://cli.github.com/) only if you republish this repo
 
 No other tool is required on the host machine: Python, uv, boto3 and Euporie all run inside containers, resolved from `uv.lock`.
 
@@ -26,7 +25,7 @@ make down         # stop and clean up everything (containers, network)
 
 ## Structure
 
-```
+```bash
 .
 ├── Dockerfile                  # runner image: uv + Python 3.12, deps from uv.lock
 ├── pyproject.toml / uv.lock     # dependency manifest, resolved & locked with uv
