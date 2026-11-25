@@ -18,6 +18,7 @@ aws s3 ls s3://customers-data --recursive
 ID=$(aws ec2 run-instances --image-id ami-amazonlinux2023 --instance-type t3.micro \
       --key-name ml-key --user-data file://scoring/install.sh \
       --query 'Instances[0].InstanceId' --output text)
+aws ec2 wait instance-running --instance-ids $ID
 IP=$(aws ec2 describe-instances --instance-ids $ID \
       --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
 echo $ID $IP
