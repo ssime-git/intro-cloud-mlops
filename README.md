@@ -23,6 +23,33 @@ make notebook      # live, step-by-step walkthrough of both demos (Euporie)
 make down         # stop and clean up everything (containers, network)
 ```
 
+## Hands-on masterclass (step by step)
+
+The masterclass moves a small scoring script from a laptop to the cloud in four
+steps (laptop → EC2 → EC2 + S3 + role → S3 → Lambda). Each step has a branch
+holding the repo as it is at the start of that step, and a `steps/N-*.md` file
+with the exact commands (in French):
+
+| Branch | Walkthrough |
+|---|---|
+| `step-0-start` | [steps/0-start.md](steps/0-start.md): `make up`, the Floci console, `make shell` |
+| `step-1-identity` | [steps/1-identity.md](steps/1-identity.md): a user, an access key, a denial, a policy |
+| `step-2-ec2` | [steps/2-ec2.md](steps/2-ec2.md): launch an instance, SSH in, run `score.py` |
+| `step-3-s3-role` | [steps/3-s3-role.md](steps/3-s3-role.md): S3 bucket, instance role, temporary credentials |
+| `step-4-lambda` | [steps/4-lambda.md](steps/4-lambda.md): `pipeline/deploy.py`, S3 → Lambda, CloudWatch Logs |
+| `step-5-final` | [steps/5-final.md](steps/5-final.md): the final architecture, `infra/main.tf` |
+
+```bash
+make up        # Floci 2.5.0 + runner, IAM enforcement on
+make console   # http://localhost:4566/_floci/ui
+make shell     # every hands-on command is typed in here
+make down      # removes everything, including EC2/Lambda containers
+```
+
+Policies typed live at step N are committed on branch N+1. To jump to the next
+branch with those files still in your working tree, use `git checkout -f <branch>`
+(your `ml-key.pem` is git-ignored and stays).
+
 ## Structure
 
 ```bash
