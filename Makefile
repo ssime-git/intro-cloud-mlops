@@ -1,7 +1,16 @@
-.PHONY: up down logs wait demo1 demo2 floci-iam-on floci-iam-off \
+.PHONY: up down reset shell console logs wait demo1 demo2 floci-iam-on floci-iam-off \
         test notebook-setup notebook notebook-test clean
 
+CONSOLE_URL := http://localhost:4566/_floci/ui
+
+# Images Floci starts on demand (EC2 instance, Lambda runtime, web console):
+# pulled up front so the first launch on stage does not wait on the network.
+PREPULL_IMAGES := public.ecr.aws/amazonlinux/amazonlinux:2023 \
+                  public.ecr.aws/lambda/python:3.12 \
+                  floci/floci-ui:0.7.0
+
 up:
+	@for img in $(PREPULL_IMAGES); do docker image inspect $$img >/dev/null 2>&1 || docker pull $$img; done
 	docker compose up -d --build
 	$(MAKE) wait
 	docker compose exec -T runner uv sync --all-groups
@@ -14,6 +23,20 @@ wait:
 	done; \
 	echo "Floci did not become ready within 120s" >&2; exit 1
 	@echo "Floci is up."
+
+# Terminal inside the runner: every hands-on command is typed here.
+shell:
+	docker compose exec runner bash
+
+# Opens the Floci web console (first open starts the floci-ui sidecar on :4500).
+console:
+	@if command -v open >/dev/null 2>&1; then open $(CONSOLE_URL); \
+	elif command -v xdg-open >/dev/null 2>&1; then xdg-open $(CONSOLE_URL); \
+	else echo "Open $(CONSOLE_URL) in your browser"; fi
+
+reset:
+	$(MAKE) down
+	$(MAKE) up
 
 logs:
 	docker compose logs -f floci
@@ -55,8 +78,12 @@ notebook: notebook-setup
 notebook-test: floci-iam-on notebook-setup
 	docker compose exec -T runner uv run jupyter execute notebook/masterclass_demo.ipynb
 
+# Floci starts sibling containers (EC2 instances, Lambda runtimes, the console)
+# that compose does not know about: remove them too, then the networks.
 down:
-	docker compose down -v
+	-@docker ps -aq --filter label=io.floci=aws | xargs -r docker rm -f >/dev/null
+	docker compose down -v --remove-orphans
+	-@docker network ls -q --filter label=io.floci=aws | xargs -r docker network rm >/dev/null 2>&1
 
 clean: down
 	rm -f demos/01-s3-lambda-notification/predict.zip
