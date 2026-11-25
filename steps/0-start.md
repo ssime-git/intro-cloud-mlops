@@ -20,3 +20,9 @@ Notes :
 - Le premier `make up` télécharge environ 1,5 Go (Floci, runner, Amazon Linux 2023, runtime Lambda Python 3.12, console). À faire avant la session.
 - La première ouverture de la console démarre un conteneur `floci-aws-ui` : une page « Starting Floci UI… » s'affiche quelques secondes.
 - La console et le port 4566 n'écoutent que sur `127.0.0.1` : ils n'ont pas d'authentification.
+
+Changer d'étape (apprenant en retard, ou pour repartir propre) :
+
+```bash
+make step S=step-2-ec2     # git checkout -f, après avoir rendu à l'utilisateur les fichiers créés dans le runner
+```

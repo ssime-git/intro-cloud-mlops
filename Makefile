@@ -1,4 +1,4 @@
-.PHONY: up down reset shell console logs wait demo1 demo2 floci-iam-on floci-iam-off \
+.PHONY: up down reset step shell console logs wait demo1 demo2 floci-iam-on floci-iam-off \
         test notebook-setup notebook notebook-test clean
 
 CONSOLE_URL := http://localhost:4566/_floci/ui
@@ -33,6 +33,15 @@ console:
 	@if command -v open >/dev/null 2>&1; then open $(CONSOLE_URL); \
 	elif command -v xdg-open >/dev/null 2>&1; then xdg-open $(CONSOLE_URL); \
 	else echo "Open $(CONSOLE_URL) in your browser"; fi
+
+# Jump to another step branch. Files typed during the demo (policies/...) are
+# untracked, and the next branch tracks them: a plain checkout refuses. On a
+# Linux host they are also owned by root (created from the runner).
+# Usage: make step S=step-2-ec2
+step:
+	@test -n "$(S)" || { echo "usage: make step S=<branch>"; exit 1; }
+	@docker compose exec -T runner chown -R $$(id -u):$$(id -g) /work 2>/dev/null || true
+	git checkout -f $(S)
 
 reset:
 	$(MAKE) down
