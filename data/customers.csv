@@ -1,0 +1,9 @@
+customer_id,plan,tenure_months,score
+C001,basic,3,0.82
+C002,premium,27,0.12
+C003,basic,1,0.91
+C004,standard,14,0.47
+C005,premium,40,0.08
+C006,standard,6,0.63
+C007,basic,2,0.55
+C008,standard,19,0.31
