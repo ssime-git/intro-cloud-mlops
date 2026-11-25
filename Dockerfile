@@ -13,10 +13,11 @@ RUN apt-get update \
  && rm -rf /tmp/aws /tmp/awscliv2.zip /var/lib/apt/lists/*
 
 # Floci reuses private IPs from one EC2 instance to the next: skip host-key
-# pinning for the emulator's Docker range, otherwise the second `ssh` to a
-# reused IP fails with "REMOTE HOST IDENTIFICATION HAS CHANGED".
+# pinning (the runner only ever SSHes to Floci instances, whatever the Docker
+# subnet: 172.x, 192.168.x...), otherwise the second `ssh` to a reused IP fails
+# with "REMOTE HOST IDENTIFICATION HAS CHANGED".
 # On real AWS, keep host-key checking on.
-RUN printf 'Host 172.* 10.*\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR\n' \
+RUN printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR\n' \
       > /etc/ssh/ssh_config.d/floci.conf
 
 # Keep the virtualenv outside the bind-mounted /work directory: the repo is
