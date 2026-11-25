@@ -47,8 +47,8 @@ make down      # removes everything, including EC2/Lambda containers
 ```
 
 Policies typed live at step N are committed on branch N+1. To jump to the next
-branch with those files still in your working tree, use `git checkout -f <branch>`
-(your `ml-key.pem` is git-ignored and stays).
+branch with those files still in your working tree, use `make step S=<branch>`
+(it runs `git checkout -f`; your `ml-key.pem` is git-ignored and stays).
 
 ## Structure
 
