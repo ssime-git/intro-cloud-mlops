@@ -93,6 +93,11 @@ On la lit ligne par ligne : `Effect`, `Action` (`service:Action`, avec des joker
 
 Puis la capture de l'éditeur visuel du vrai AWS (S3 → List → ListAllMyBuckets) : il produit exactement le JSON écrit plus haut. La console Floci n'a pas cet éditeur.
 
-Console : **Identity** → `alice`. Le détail de l'utilisateur affiche sa policy inline `list-buckets`.
+La console Floci affiche Alice et son ARN, mais pas ses policies inline. On vérifie en commande :
+
+```bash
+aws iam list-user-policies --user-name alice                          # ["list-buckets"]
+aws iam get-user-policy --user-name alice --policy-name list-buckets  # le JSON accroché
+```
 
 > Le profil `alice` vit dans `~/.aws` du runner. Il disparaît avec le conteneur (`make reset`).
