@@ -49,9 +49,9 @@ aws logs tail /aws/lambda/score                            # ce que la fonction 
 
 Console :
 
-- **Storage** → `customers-data` : `in/` et `out/`.
-- **Serverless** → `score`.
+- **Storage** → clic sur `customers-data` : le panneau **Objects** en bas montre `in/` et `out/` ; clic sur `out` : `customers.csv` (étape 3) et `day2.csv`.
+- **Serverless** → clic sur `score` : runtime `python3.12`, handler `handler.handler`, et le badge **Register Trigger (1)** = la notification S3.
 - **Identity** → `scoring-lambda-role` à côté de `scoring-ec2-role`.
-- **CloudWatch Logs** → `/aws/lambda/score`.
+- **CloudWatch Logs** → clic sur `/aws/lambda/score` → **Run query** : les deux lignes du handler.
 
 > Floci : seules les lignes écrites par le handler (`print`) arrivent dans CloudWatch Logs. Sur AWS, on voit en plus les lignes `START`, `END` et `REPORT` (durée, mémoire, coût facturé).
