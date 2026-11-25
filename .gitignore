@@ -7,10 +7,12 @@ __pycache__/
 # Build artifacts
 *.zip
 
-# Jupyter / euporie
-.ipynb_checkpoints/
-notebook/.ipynb_checkpoints/
 
 # OS
 .DS_Store
 slides/
+# SSH keys created during the tutorials (aws ec2 create-key-pair)
+*.pem
+
+# Everything learners create during the tutorials (keys, policies)
+lab/

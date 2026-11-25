@@ -1,94 +1,104 @@
-# intro-cloud-mlops
+# Intro to the cloud for ML engineers
 
-Demos for an AWS/MLOps masterclass using [Floci](https://github.com/floci-io/floci), a local AWS emulator (open-source alternative to LocalStack), driven entirely through Docker containers — nothing is installed on the host machine. Dependencies inside the containers are managed with [uv](https://docs.astral.sh/uv/).
+We take a small scoring script that runs on a laptop and move it to the cloud in four steps. Each step brings in a new AWS service because the previous step has a concrete problem. Everything runs locally on [Floci](https://github.com/floci-io/floci), an AWS emulator: no AWS account, nothing to pay.
 
-## Why Floci?
+```
+v0  laptop          score.py reads customers.csv from the disk
+v1  EC2             same script, on a rented machine
+v2  EC2 + S3 + role the data leaves the machine
+v3  S3 → Lambda     no machine: the file triggers the computation
+```
 
-Floci runs locally, for free, and exposes an AWS-compatible API (S3, Lambda, IAM, DynamoDB, etc.) on `http://localhost:4566`. It lets you demonstrate cloud architectures (event-driven, IAM, serverless) without an AWS account or any cost.
+The ML code never changes: it is always the same `add_predictions()` function in `scoring/score.py`.
 
 ## Prerequisites
 
 - Docker
-- `make`
+- `make` and `git`
 
-No other tool is required on the host machine: Python, uv, boto3 and Euporie all run inside containers, resolved from `uv.lock`.
+Nothing else to install: the AWS CLI, Python and boto3 run in a container.
 
-## Quick start
+## How to use this repo
+
+You work in **two terminals**:
+
+| Terminal | How to open it | What you type there |
+|---|---|---|
+| **Your machine** | any terminal, in the repo folder | `make ...` and `git` commands only |
+| **Work terminal** | `make shell` (from your machine) | every `aws`, `python`, `ssh` command of the tutorials |
+
+The work terminal is a container with the AWS CLI. Its folder `/work` **is** your repo folder: a file created there appears in your repo, and the other way round.
+
+The steps, once:
 
 ```bash
-make up          # build the runner image (uv sync), start Floci + runner
-make demo1        # demo 1: S3 -> Lambda notification
-make demo2        # demo 2: IAM policy enforcement
-make notebook      # live, step-by-step walkthrough of both demos (Euporie)
-make down         # stop and clean up everything (containers, network)
+git clone https://github.com/ssime-git/intro-cloud-mlops.git
 ```
-
-## Structure
 
 ```bash
-.
-├── Dockerfile                  # runner image: uv + Python 3.12, deps from uv.lock
-├── pyproject.toml / uv.lock     # dependency manifest, resolved & locked with uv
-├── docker-compose.yml          # Floci + runner container
-├── Makefile                    # up/down/demo1/demo2/notebook/test/clean targets
-├── demos/
-│   ├── 01-s3-lambda-notification/   # S3 upload -> automatic Lambda trigger
-│   └── 02-iam-policy-enforcement/   # IAM deny/allow with policies
-├── notebook/                   # Euporie notebook for live presentation
-└── tests/                      # unit tests (CSV transform, no S3/Floci needed)
+cd intro-cloud-mlops
 ```
-
-Each demo has its own `README.md` with a step-by-step walkthrough and expected output.
-
-## Demo 1 — S3 → Lambda notification
-
-A Python 3.12 Lambda (`predict`) is automatically triggered when a CSV is uploaded under `in/` in the `demo` bucket. It adds a `prediction` column (1 if `score > 0.5`, else 0) and writes the result under `out/`.
-
-See [demos/01-s3-lambda-notification/README.md](demos/01-s3-lambda-notification/README.md).
-
-## Demo 2 — IAM policy enforcement
-
-Demonstrates that Floci actually enforces IAM policies when `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true`: a `junior` user with no permissions is denied `s3:ListAllMyBuckets` (403 `AccessDenied`), then allowed once an inline policy is attached.
-
-See [demos/02-iam-policy-enforcement/README.md](demos/02-iam-policy-enforcement/README.md).
-
-## Live walkthrough notebook (Euporie)
-
-[`notebook/masterclass_demo.ipynb`](notebook/masterclass_demo.ipynb) drives both demos as a terminal Jupyter notebook, one AWS call per cell — no `deploy.py`/`run_demo.py` black boxes, so every mechanism (IAM role, least-privilege policy, permission, event notification, IAM deny/allow) is visible and can be run, discussed, and re-run live during the masterclass.
 
 ```bash
 make up
-make notebook
 ```
 
-`make notebook` registers a Jupyter kernel for the uv-managed venv and opens the notebook in [Euporie](https://github.com/joouha/euporie)'s terminal UI. Demo 2's cells need Floci restarted with IAM enforcement first — run `make floci-iam-on` in another terminal before reaching that section (instructions are also in the notebook itself).
-
-To sanity-check the whole notebook non-interactively (e.g. after editing it):
+Then, **before each tutorial**, on your machine, go to that tutorial's branch and open the work terminal:
 
 ```bash
-make notebook-test
+make step S=step-0-start
 ```
 
-## Dependency management (uv)
+```bash
+make shell
+```
 
-Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`, split into groups:
+- Each branch holds the repo as it is at the start of that tutorial: it adds the files the tutorial needs. Switching branch keeps everything you created in Floci (users, instances, buckets).
+- What you create goes into `lab/` (keys, policies). Git ignores this folder: nothing you type ends up in a commit, and switching branch never conflicts with it.
+- Starting a tutorial without the previous ones, or doing it again: run `make reset-step` after `make step`. It restarts Floci from scratch and recreates what the previous tutorials left behind.
+- At the end: `make reset-all` removes everything and brings you back to `step-0-start`.
 
-- base (`boto3`) — what the demo scripts need
-- `dev` (`pytest`, `ruff`, `nbclient`) — testing and linting
-- `notebook` (`euporie`, `ipykernel`, `jupyter-client`) — the live walkthrough
+## Tutorials
 
-The runner image installs all groups at build time (`uv sync --frozen --all-groups`) into `/opt/venv`, kept outside the bind-mounted repo so the Linux venv never leaks onto the host filesystem. `make up` re-runs `uv sync` after starting the containers, so editing `pyproject.toml` and re-running `make up` picks up new dependencies without a full rebuild. To add a dependency yourself, edit `pyproject.toml` and run `uv lock` (from a container, e.g. `docker compose exec runner uv lock`, or with `uv` installed locally) to update `uv.lock`, then commit both files.
+| # | Tutorial | Branch |
+|---|---|---|
+| 0 | [Start your local AWS](docs/00-getting-started.md) | `step-0-start` |
+| 1 | [A user, a denial, a policy](docs/01-identity.md) | `step-1-identity` |
+| 2 | [Rent a machine (EC2)](docs/02-ec2.md) | `step-2-ec2` |
+| 3 | [Data leaves the machine, the machine gets a role](docs/03-s3-and-role.md) | `step-3-s3-role` |
+| 4 | [No more machine: S3 triggers Lambda](docs/04-lambda.md) | `step-4-lambda` |
+| 5 | [The final architecture, and starting over](docs/05-final-architecture.md) | `step-5-final` |
 
-## Security
+## Make commands (on your machine)
 
-The Floci container is given `/var/run/docker.sock` as a volume mount, running as `user: root`, so it can launch the Lambda runtime containers itself (sibling-container pattern). This effectively grants it root access to the Docker host. This is required to emulate Lambda, but should be kept to local/demo use with a trusted image only — never in a shared or exposed environment. For this reason port 4566 is also bound to `127.0.0.1` only.
+| Command | What it does |
+|---|---|
+| `make up` | starts Floci and the work terminal container |
+| `make shell` | opens the work terminal |
+| `make console` | opens the Floci web console (http://localhost:4566/_floci/ui) |
+| `make step S=<branch>` | switches to a tutorial's branch |
+| `make reset-step` | starts the current tutorial again from scratch (recreates `lab/` and the resources of the previous tutorials) |
+| `make reset-all` | removes everything, back to `step-0-start` |
+| `make down` | stops and removes all containers |
 
-## Notes / differences from real AWS
+## What is in the repo
 
-- IAM policy enforcement is **disabled by default** in Floci — without the `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED=true` flag, everything is allowed regardless of the caller's identity.
-- The first Lambda trigger is slower (~30s) because Floci pulls the `public.ecr.aws/lambda/python:3.12` runtime image; subsequent triggers are fast.
-- IAM policy propagation is instantaneous in Floci, whereas real AWS can introduce a short delay.
+```
+scoring/score.py      the scoring script (add_predictions)
+scoring/install.sh    installs the AWS CLI on an EC2 instance at boot
+data/customers.csv    the data
+pipeline/             deploy.py (S3 → Lambda) and handler.py
+infra/main.tf         the same infrastructure in Terraform (to read)
+scripts/              setup-step.sh, used by make reset-step
+lab/                  (created by you, git-ignored) your keys and policies
+docs/                 the tutorials
+```
 
-## License
+## Floci vs real AWS
 
-MIT — see [LICENSE](LICENSE).
+The commands are the real AWS ones. A few differences, pointed out in the tutorials:
+
+- EC2 instances are Docker containers, reachable directly on their private IP;
+- `scoring/install.sh` points the instance's AWS CLI at Floci: remove that part on a real EC2 instance;
+- Lambda logs only contain what the code prints, without the `START`/`REPORT` lines;
+- the Floci console has no authentication: it only listens on `127.0.0.1`.
