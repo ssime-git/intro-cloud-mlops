@@ -1,16 +1,16 @@
-# 2 · Rent a machine (EC2)
+# 3 · Data leaves the machine, the machine gets a role
 
-**Goal**: launch an instance, SSH into it, run `score.py` there, destroy it.\
-**Time**: 15 min
+**Goal**: store the data in S3, and give the machine rights without copying any key.\
+**Time**: 20 min
 
 ## Before you start
 
-This branch adds `scoring/score.py` and `data/customers.csv`.
+This branch adds `scoring/install.sh`. You need what tutorial 2 left behind: the key `lab/ml-key.pem`.
 
 On **your machine**, go to this tutorial's branch:
 
 ```bash
-make step S=step-2-ec2
+make step S=step-3-s3-role
 ```
 
 Only if you skipped the previous tutorials, or want to do this one again from scratch (fresh Floci, `lab/` and the previous tutorials' resources recreated):
@@ -25,175 +25,221 @@ Open the work terminal:
 make shell
 ```
 
-## 1. The script runs on "my laptop"
+## 1. A bucket and the data
 
-In the **work terminal** (it plays the laptop here):
-
-```bash
-python scoring/score.py data/customers.csv /tmp/out.csv
-```
+In the **work terminal**, create the bucket `customers-data`:
 
 ```bash
-cat /tmp/out.csv
+aws s3 mb s3://customers-data
 ```
 
-A `prediction` column was added: 1 if `score > 0.5`, else 0.
-
-## 2. Launch an instance with the mouse
-
-In the console: **Compute → Launch instance** · Instance name: `clic` · AMI: `al2023-ami-2023.0.20230315.0-kernel-6.1-x86_64` · Instance type: `t3.micro` · Key pair: `None` · **Launch instance**.
-
-![Launch an instance](img/02-launch-form.png)
-
-### What the fields mean
-
-**AMI** (Amazon Machine Image): the disk image the machine boots from, OS and preinstalled tools included. `al2023-ami-2023.0.20230315.0-kernel-6.1-x86_64` is Amazon Linux 2023, the default for AWS tutorials; its ID is `ami-0abcdef1234567891`. The AMI fixes the OS, not the hardware.
-
-**Instance type**: the hardware, billed per second for as long as the instance exists. `t3.micro` is 2 vCPU and 1 GiB of RAM: `t` is the burstable family (cheap, it shares the physical CPU), `3` the generation, `micro` the size.
-
-**Subnet**: the network segment the machine's network card is plugged into. A VPC is a private network (`172.31.0.0/16` by default); a subnet is a smaller range (`172.31.0.0/20`) inside it, in one availability zone, that is one datacenter. The subnet decides both the private IP range and where the machine physically runs. `Default` picks one of the three subnets that come with the default VPC.
-
-**Key pair** (`None` here): the SSH key injected at boot. Without one, no SSH — the next step creates it.
-
-### Floci vs a real AWS account
-
-Same fields, different machinery behind them:
-
-| Field | Real AWS | Floci |
-|---|---|---|
-| AMI | Boot disk snapshot; thousands per region, each tied to an architecture | Short catalog (`aws ec2 describe-images`), each entry mapped to a Docker image: `ami-amazonlinux2023` → `public.ecr.aws/amazonlinux/amazonlinux:2023` |
-| Instance type | Real hardware, real capacity | A catalog entry turned into Docker limits: `t3.micro` = 2 vCPU (`NanoCpus`) and 1 GiB (`Memory`) |
-| Subnet | Real network segment in one datacenter; its CIDR gives the private IP | Pre-created default VPC `172.31.0.0/16` and three default subnets in `us-east-1a/b/c`; the subnet ID and AZ are stored and returned, but the IP is the container's Docker address (e.g. `172.29.0.5`), outside the subnet CIDR |
-| Availability zone | A distinct datacenter: latency and failure domain | A label; no latency or failure difference between zones |
-| VPC, internet gateway, route table | Real routing | Created by default so tools and Terraform work; no routing emulated |
-| Key pair | Public key stored by AWS, injected at boot | Same: public key written to `/root/.ssh/authorized_keys`; port 22 published on a host port in `2200–2299` |
-| Security group | Stateful firewall filtering traffic | Stored, and used to decide which ports are published on the host; does not filter traffic unless `FLOCI_NETWORK_SECURITY_GROUP_ENFORCEMENT_ENABLED=true` |
-| Instance lifecycle | Hypervisor VM: start, stop, reboot, terminate | Docker container: same states map to `docker start/stop/restart/rm` |
-| Billing | Per second, per instance type | Nothing |
-
-## 3. Launch an instance from the command line
-
-In the **work terminal**, create an SSH key pair. AWS keeps the public key; the private key is saved to `lab/ml-key.pem` in your repo (git-ignored):
+Upload the data under the prefix `in/`:
 
 ```bash
-mkdir -p lab
+aws s3 cp data/customers.csv s3://customers-data/in/customers.csv
 ```
+
+> **Where the object goes.** This stack runs Floci in `memory` mode: no `FLOCI_STORAGE_MODE` is set in `docker-compose.yml`, so the default applies. The bucket and its objects live in the Floci process's RAM, keyed by account / bucket / key. Nothing is written to disk, so there is no file to `ls` in the container, `docker restart floci` or `make down` loses everything — `make reset-step` is not the only command that wipes — and the size is bounded by the container's memory, not by an S3 quota. Real S3 writes each object to disks and replicates it across at least three availability zones. To keep objects across restarts, set `FLOCI_STORAGE_MODE=persistent` (or `hybrid`) and mount a volume on `/app/data`: each body becomes a `<key>.s3data` file under the bucket's directory.
+
+## 2. A machine with the AWS CLI
+
+`scoring/install.sh` is a script the instance runs once at boot (*user data*). It installs the AWS CLI.
+
+```mermaid
+flowchart LR
+  AMI["AMI · Amazon Linux 2023<br/>python3, ssh, no aws CLI"]
+  UD["user data · install.sh<br/>runs once, as root"]
+  CLI["aws CLI 2<br/>+ ~/.aws/config"]
+  S3["S3 · customers-data"]
+  AMI -->|"first boot"| UD
+  UD -->|"dnf install awscli-2"| CLI
+  CLI -->|"aws s3 cp"| S3
+```
+
+Why it is needed: the AMI brings the OS and its tools (`python3`, `ssh`), not the AWS CLI. Without `install.sh`, the `aws s3 cp` below answers `aws: command not found`. User data is how a machine is prepared at launch, without logging into it: the file is passed to `run-instances`, copied in, and executed at first boot.
+
+In the **work terminal**:
 
 ```bash
-aws ec2 create-key-pair --key-name ml-key --query KeyMaterial --output text > lab/ml-key.pem
+ID=$(aws ec2 run-instances --image-id ami-amazonlinux2023 --instance-type t3.micro --key-name ml-key --user-data file://scoring/install.sh --query 'Instances[0].InstanceId' --output text)
 ```
-
-`ssh` refuses a private key that others can read:
-
-```bash
-chmod 400 lab/ml-key.pem
-```
-
-Launch the instance and keep its ID in the shell variable `ID`. This creates a **second** instance: `clic` and this one are independent machines, not two views of the same one.
-
-```bash
-ID=$(aws ec2 run-instances --image-id ami-amazonlinux2023 --instance-type t3.micro --key-name ml-key --query 'Instances[0].InstanceId' --output text)
-```
-
-`--image-id` takes the AMI (here its alias, `ami-amazonlinux2023`), `--instance-type` the hardware. No `--subnet-id`: Floci picks a default subnet, and the instance lands in that subnet's zone.
-
-```bash
-echo $ID
-```
-
-Wait until it runs (about 10 s):
 
 ```bash
 aws ec2 wait instance-running --instance-ids $ID
 ```
 
 ```bash
-aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output table
-```
-
-Two instances: `clic` and yours. Nothing links them beyond the account, the region and the default subnet: `clic` has no key pair and no name tag, yours has `ml-key`. In the console, click **Refresh**: they are at the top of the list, above the images (AMIs).
-
-![Two instances](img/02-instances.png)
-
-```mermaid
-flowchart TB
-  subgraph VPC["Default VPC · 172.31.0.0/16 · account 000000000000"]
-    SN["Default subnet · us-east-1c"]
-    C["clic<br/>created in the console · no key pair"]
-    M["your instance<br/>created with the CLI · key pair ml-key"]
-  end
-  SN --- C
-  SN --- M
-```
-
-Both machines sit in the same subnet and show up in the same list, but they are separate: different instance IDs, different lifecycles, different keys.
-
-> **Could we attach `ml-key` to `clic` instead?** No. The key pair is fixed at launch, and `aws ec2 modify-instance-attribute` has no `--key-name` (the CLI answers `Unknown options`). The instance has to be recreated — here, terminate it and launch a new one with `--key-name ml-key`. In general, save it as an image first:
->
-> ```bash
-> CLIC=$(aws ec2 describe-instances --filters Name=tag:Name,Values=clic --query 'Reservations[0].Instances[0].InstanceId' --output text)
-> AMI=$(aws ec2 create-image --instance-id $CLIC --name clic-with-key --no-reboot --query ImageId --output text)
-> aws ec2 wait image-available --image-ids $AMI
-> aws ec2 run-instances --image-id $AMI --instance-type t3.micro --key-name ml-key
-> ```
->
-> On Floci only, the instance is a container, so on **your machine** (with `CLIC` set there, or its ID typed in full) you can write the public key straight into it:
->
-> ```bash
-> ssh-keygen -y -f lab/ml-key.pem | docker exec -i floci-aws-ec2-$CLIC sh -c 'cat >> /root/.ssh/authorized_keys'
-> ```
-
-Terminate `clic` in the console: bin icon on its row, then **Confirm**.
-
-![Terminate an instance](img/02-terminate.png)
-
-> `ID` only lives in this terminal. If you closed it, get it back with:
-> `ID=$(aws ec2 describe-instances --filters Name=instance-state-name,Values=running Name=key-name,Values=ml-key --query 'Reservations[0].Instances[0].InstanceId' --output text)`
-
-## 4. Get into the machine
-
-In the **work terminal**, get the instance's IP address:
-
-```bash
 IP=$(aws ec2 describe-instances --instance-ids $ID --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
 ```
 
-Copy the script and the data to the instance (`root@$IP:` means the home folder of `root` on the instance). The SSH server needs about 30 s after launch: if you get `Connection refused`, wait and try again.
+Wait about 40 s (SSH server, then the CLI install), then copy the script:
 
 ```bash
-scp -i lab/ml-key.pem scoring/score.py data/customers.csv root@$IP:
+scp -i lab/ml-key.pem scoring/score.py root@$IP:
 ```
-
-Open a session on the instance:
 
 ```bash
 ssh -i lab/ml-key.pem root@$IP
 ```
 
-The prompt changes to `[root@… ~]#`: you are **on the EC2 instance**. Run the same script there:
+**On the EC2 instance**, try to read the data:
 
 ```bash
-python3 score.py customers.csv out.csv && cat out.csv
+aws s3 cp s3://customers-data/in/customers.csv .
 ```
 
-<details>
-<summary><strong>Why does it work without installing anything?</strong></summary>
+```
+fatal error: Unable to locate credentials
+```
 
-`score.py` only imports `csv`, `io` and `sys`: three modules of Python's **standard library**, shipped with the interpreter. Nothing to download, so nothing to install.
-
-An installation is only needed for a third-party package (`pandas`, `numpy`, `boto3`…). That is what `pip install` is for, and it is exactly what step 3 brings with boto3.
-
-And `python3` is already there because the **AMI** provides it: Amazon Linux 2023 ships Python 3.9, `ssh`, `scp`… That is the AMI's job seen in step 2 — OS and preinstalled tools — not your code's.
-
-</details>
-
-Back to the work terminal:
+The machine has no rights at all. (If you get `aws: command not found`, `install.sh` is still running: wait 10 s.)
 
 ```bash
 exit
 ```
 
-## 5. Destroy the machine
+## 3. Write the role
+
+A role needs two policies: **who** may wear it (trust policy), and **what** it allows.
+
+In the **work terminal**, who: the EC2 service. Write `lab/trust-ec2.json`:
+
+```bash
+cat > lab/trust-ec2.json <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Service": "ec2.amazonaws.com" },
+    "Action": "sts:AssumeRole"
+  }]
+}
+JSON
+```
+
+What: read `in/`, write `out/`. Write `lab/scoring-s3.json`:
+
+```bash
+cat > lab/scoring-s3.json <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::customers-data/in/*" },
+    { "Effect": "Allow", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::customers-data/out/*" }
+  ]
+}
+JSON
+```
+
+Create the role `scoring-ec2-role` with the trust policy:
+
+```bash
+aws iam create-role --role-name scoring-ec2-role --assume-role-policy-document file://lab/trust-ec2.json
+```
+
+Attach what it allows:
+
+```bash
+aws iam put-role-policy --role-name scoring-ec2-role --policy-name scoring-s3 --policy-document file://lab/scoring-s3.json
+```
+
+## 4. Attach the role to the machine
+
+A role is an IAM object. EC2 does not attach roles directly: it attaches an **instance profile**, a holder that contains exactly one role. Three objects, three commands, in this order:
+
+1. `create-instance-profile` creates the empty holder `scoring-ec2`.
+2. `add-role-to-instance-profile` puts `scoring-ec2-role` inside it.
+3. `associate-iam-instance-profile` bolts the holder onto the instance `$ID`.
+
+```mermaid
+flowchart LR
+  subgraph IAM["IAM · identity"]
+    R["Role · scoring-ec2-role<br/>trust: ec2.amazonaws.com<br/>allow: s3:GetObject on in/*<br/>s3:PutObject on out/*"]
+    P["Instance profile · scoring-ec2<br/>one holder, one role"]
+  end
+  subgraph EC2["EC2 · the machine"]
+    I["Instance · $ID"]
+    M["Metadata service<br/>169.254.169.254"]
+  end
+  S3["S3 · customers-data"]
+  R -->|"add-role-to-instance-profile"| P
+  P -->|"associate-iam-instance-profile"| I
+  I -->|"asks for credentials"| M
+  M -->|"temporary keys, 1 h"| I
+  I -->|"aws s3 cp, signed"| S3
+```
+
+| Object | What it is | Created by |
+|---|---|---|
+| Role | Permissions, plus who may wear it (the trust policy) | Section 3 |
+| Instance profile | Holder for one role, and the only thing EC2 accepts | `create-instance-profile` + `add-role-to-instance-profile` |
+| Association | The link profile → instance, destroyed with the instance | `associate-iam-instance-profile` |
+
+Nothing is copied onto the machine: once the association exists, the instance asks its metadata service for credentials and receives temporary keys for the role (next section).
+
+In the **work terminal**:
+
+```bash
+aws iam create-instance-profile --instance-profile-name scoring-ec2
+```
+
+```bash
+aws iam add-role-to-instance-profile --instance-profile-name scoring-ec2 --role-name scoring-ec2-role
+```
+
+```bash
+aws ec2 associate-iam-instance-profile --instance-id $ID --iam-instance-profile Name=scoring-ec2
+```
+
+In the console, **Identity**: the role is there next to Alice.
+
+![The role in the console](img/03-roles.png)
+
+## 5. Work with temporary keys
+
+In the **work terminal**:
+
+```bash
+ssh -i lab/ml-key.pem root@$IP
+```
+
+**On the EC2 instance**, the machine fetches temporary keys (with an expiry date) from the metadata service. Nobody copied them:
+
+```bash
+curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/scoring-ec2-role
+```
+
+Read the data, score it, write the result:
+
+```bash
+aws s3 cp s3://customers-data/in/customers.csv .
+```
+
+```bash
+python3 score.py customers.csv out.csv
+```
+
+```bash
+aws s3 cp out.csv s3://customers-data/out/customers.csv
+```
+
+Now an action the role does not allow:
+
+```bash
+aws s3 ls s3://customers-data/in/
+```
+
+```
+An error occurred (AccessDenied) ... User is not authorized to perform: s3:ListBucket
+```
+
+Scoring does not need it: we do not add it. That is least privilege.
+
+```bash
+exit
+```
+
+## 6. The result outlives the machine
 
 In the **work terminal**:
 
@@ -201,12 +247,20 @@ In the **work terminal**:
 aws ec2 terminate-instances --instance-ids $ID
 ```
 
-> **Takeaway**: `out.csv` disappeared with the machine, and the machine was billed every second, even unused. Two problems the next tutorials solve.
+```bash
+aws s3 ls s3://customers-data/out/
+```
+
+In the console, **Storage → customers-data**: the folders `in/` and `out/`.
+
+![The bucket](img/03-bucket.png)
+
+> **Takeaway**: the data lives in S3, not on the machine. A service wears a role, never a key. One problem left: we pay for a whole machine for 2 seconds of computing.
 >
-> *Floci*: the instance is a Docker container; the work terminal reaches it on its private IP. On AWS you would go through a public IP or a bastion.
+> *Floci*: `install.sh` also writes `/root/.aws/config` on the instance so its CLI talks to Floci. Remove that part on a real EC2 instance.
 
 ---
 
 *Intro to the cloud for ML engineers* — the same scoring script, moved to the cloud on a local AWS (Floci).
 
-All tutorials: [`main`](https://github.com/ssime-git/intro-cloud-mlops) · This branch: `step-2-ec2` · Next: `make step S=step-3-s3-role`
+All tutorials: [`main`](https://github.com/ssime-git/intro-cloud-mlops) · This branch: `step-3-s3-role` · Next: `make step S=step-4-lambda`
