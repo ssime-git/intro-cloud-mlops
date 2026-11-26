@@ -1,14 +1,16 @@
-# 1 · A user, a denial, a policy
+# 2 · Rent a machine (EC2)
 
-**Goal**: create a user, see that they have no rights, write them a policy.\
+**Goal**: launch an instance, SSH into it, run `score.py` there, destroy it.\
 **Time**: 15 min
 
 ## Before you start
 
+This branch adds `scoring/score.py` and `data/customers.csv`.
+
 On **your machine**, go to this tutorial's branch:
 
 ```bash
-make step S=step-1-identity
+make step S=step-2-ec2
 ```
 
 Only if you skipped the previous tutorials, or want to do this one again from scratch (fresh Floci, `lab/` and the previous tutorials' resources recreated):
@@ -23,184 +25,188 @@ Open the work terminal:
 make shell
 ```
 
-## 1. Create Alice in the console
+## 1. The script runs on "my laptop"
 
-In the console: **Security → Identity → Create** · Kind: `users` · Name: `alice` · **Create**.
-
-![Create a user](img/01-create-user.png)
-
-Alice shows up with her ARN, her unique identifier in AWS:
-
-![Alice and her ARN](img/01-alice.png)
-
-## 2. Find her from the command line
-
-Two different questions, two different commands.
-
-**Who am I?** `sts` is the Security Token Service: the AWS service that answers "which identity signed this request?". `get-caller-identity` takes no argument; it returns the principal behind the keys the CLI used. Without any option, the CLI uses the work terminal's default keys, which belong to the account administrator (`root`):
+In the **work terminal** (it plays the laptop here):
 
 ```bash
-aws sts get-caller-identity
-```
-
-```
-"Arn": "arn:aws:iam::000000000000:root"
-```
-
-`root` is not a user someone created: it is the account itself, with full rights and no policy to attach.
-
-**Does Alice exist?** `aws iam get-user` looks up an object by name. It does not say who is calling:
-
-```bash
-aws iam get-user --user-name alice
-```
-
-```
-"Arn": "arn:aws:iam::000000000000:user/alice"
-```
-
-Same ARN as in the console. To see every identity of the account instead of one:
-
-```bash
-aws iam list-users --query 'Users[].UserName' --output text
-```
-
-```
-alice
-```
-
-**Reading an ARN.** `arn:aws:iam::000000000000:user/alice` is `arn` (an AWS name), `aws` (the partition), `iam` (the service), an empty region (IAM is global), `000000000000` (the account), `user/alice` (the resource). `root` and `alice` share the account id and nothing else: two distinct identities in the same account.
-
-> The console's identity page shows Alice's **record** (her ARN), not the caller. `get-caller-identity` shows the **caller**. That is why one screen says `alice` and the other `root`.
-
-## 3. Give Alice access keys
-
-In the **work terminal**:
-
-```bash
-aws iam create-access-key --user-name alice
-```
-
-```
-"AccessKeyId": "AKIA...",
-"SecretAccessKey": "..."
-```
-
-Now store these two values in a **profile** named `alice`. A profile is a named set of keys that the CLI keeps in the file `~/.aws/credentials` (here `/root/.aws/credentials`, inside the work terminal container). Replace `<AccessKeyId>` and `<SecretAccessKey>` with the values printed above:
-
-```bash
-aws configure set aws_access_key_id <AccessKeyId> --profile alice
+python scoring/score.py data/customers.csv /tmp/out.csv
 ```
 
 ```bash
-aws configure set aws_secret_access_key <SecretAccessKey> --profile alice
+cat /tmp/out.csv
 ```
 
-Check what was saved:
+A `prediction` column was added: 1 if `score > 0.5`, else 0.
 
-```bash
-cat ~/.aws/credentials
-```
+## 2. Launch an instance with the mouse
 
-```
-[alice]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
-```
+In the console: **Compute → Launch instance** · Instance name: `clic` · AMI: `al2023-ami-2023.0.20230315.0-kernel-6.1-x86_64` · Instance type: `t3.micro` · Key pair: `None` · **Launch instance**.
 
-From now on, adding `--profile alice` to a command makes the CLI sign it with Alice's keys instead of the administrator's:
+![Launch an instance](img/02-launch-form.png)
 
-```bash
-aws sts get-caller-identity --profile alice
-```
+### What the fields mean
 
-```
-"Arn": "arn:aws:iam::000000000000:user/alice"
-```
+**AMI** (Amazon Machine Image): the disk image the machine boots from, OS and preinstalled tools included. `al2023-ami-2023.0.20230315.0-kernel-6.1-x86_64` is Amazon Linux 2023, the default for AWS tutorials; its ID is `ami-0abcdef1234567891`. The AMI fixes the OS, not the hardware.
 
-`--profile` is not an AWS API parameter: it is an option of the CLI itself, read before the request is sent. It tells the CLI which keys to load from `~/.aws/credentials`, then signs with them. The service (here `sts`) never sees it.
+**Instance type**: the hardware, billed per second for as long as the instance exists. `t3.micro` is 2 vCPU and 1 GiB of RAM: `t` is the burstable family (cheap, it shares the physical CPU), `3` the generation, `micro` the size.
 
-> The profile lives in the container: `make reset-step`, `make reset-all` or `make down` delete it.
+**Subnet**: the network segment the machine's network card is plugged into. A VPC is a private network (`172.31.0.0/16` by default); a subnet is a smaller range (`172.31.0.0/20`) inside it, in one availability zone, that is one datacenter. The subnet decides both the private IP range and where the machine physically runs. `Default` picks one of the three subnets that come with the default VPC.
 
-## 4. See the denial
+**Key pair** (`None` here): the SSH key injected at boot. Without one, no SSH — the next step creates it.
 
-In the **work terminal**:
+### Floci vs a real AWS account
 
-```bash
-aws s3 ls --profile alice
-```
+Same fields, different machinery behind them:
 
-```
-An error occurred (AccessDenied) ... User is not authorized to perform: s3:ListAllMyBuckets
-```
+| Field | Real AWS | Floci |
+|---|---|---|
+| AMI | Boot disk snapshot; thousands per region, each tied to an architecture | Short catalog (`aws ec2 describe-images`), each entry mapped to a Docker image: `ami-amazonlinux2023` → `public.ecr.aws/amazonlinux/amazonlinux:2023` |
+| Instance type | Real hardware, real capacity | A catalog entry turned into Docker limits: `t3.micro` = 2 vCPU (`NanoCpus`) and 1 GiB (`Memory`) |
+| Subnet | Real network segment in one datacenter; its CIDR gives the private IP | Pre-created default VPC `172.31.0.0/16` and three default subnets in `us-east-1a/b/c`; the subnet ID and AZ are stored and returned, but the IP is the container's Docker address (e.g. `172.29.0.5`), outside the subnet CIDR |
+| Availability zone | A distinct datacenter: latency and failure domain | A label; no latency or failure difference between zones |
+| VPC, internet gateway, route table | Real routing | Created by default so tools and Terraform work; no routing emulated |
+| Key pair | Public key stored by AWS, injected at boot | Same: public key written to `/root/.ssh/authorized_keys`; port 22 published on a host port in `2200–2299` |
+| Security group | Stateful firewall filtering traffic | Stored, and used to decide which ports are published on the host; does not filter traffic unless `FLOCI_NETWORK_SECURITY_GROUP_ENFORCEMENT_ENABLED=true` |
+| Instance lifecycle | Hypervisor VM: start, stop, reboot, terminate | Docker container: same states map to `docker start/stop/restart/rm` |
+| Billing | Per second, per instance type | Nothing |
 
-Alice's keys are valid, but she has no policy. The error gives the name of the missing action.
+## 3. Launch an instance from the command line
 
-## 5. Write her policy
-
-Need: "Alice can list the buckets". Action: `s3:ListAllMyBuckets` (read in the error). Resource: `*` (listing buckets targets no specific bucket).
-
-Everything you create in the tutorials goes into the folder `lab/` of your repo. Git ignores it, so you cannot commit it by mistake.
-
-In the **work terminal**:
+In the **work terminal**, create an SSH key pair. AWS keeps the public key; the private key is saved to `lab/ml-key.pem` in your repo (git-ignored):
 
 ```bash
 mkdir -p lab
 ```
 
-Write the policy to `lab/list-buckets.json` (copy the whole block, from `cat` to the last `JSON`):
-
 ```bash
-cat > lab/list-buckets.json <<'JSON'
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": "s3:ListAllMyBuckets",
-    "Resource": "*"
-  }]
-}
-JSON
+aws ec2 create-key-pair --key-name ml-key --query KeyMaterial --output text > lab/ml-key.pem
 ```
 
-Attach it to Alice under the name `list-buckets`:
+`ssh` refuses a private key that others can read:
 
 ```bash
-aws iam put-user-policy --user-name alice --policy-name list-buckets --policy-document file://lab/list-buckets.json
+chmod 400 lab/ml-key.pem
 ```
 
-## 6. Try again
+Launch the instance and keep its ID in the shell variable `ID`. This creates a **second** instance: `clic` and this one are independent machines, not two views of the same one.
+
+```bash
+ID=$(aws ec2 run-instances --image-id ami-amazonlinux2023 --instance-type t3.micro --key-name ml-key --query 'Instances[0].InstanceId' --output text)
+```
+
+`--image-id` takes the AMI (here its alias, `ami-amazonlinux2023`), `--instance-type` the hardware. No `--subnet-id`: Floci picks a default subnet, and the instance lands in that subnet's zone.
+
+```bash
+echo $ID
+```
+
+Wait until it runs (about 10 s):
+
+```bash
+aws ec2 wait instance-running --instance-ids $ID
+```
+
+```bash
+aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output table
+```
+
+Two instances: `clic` and yours. Nothing links them beyond the account, the region and the default subnet: `clic` has no key pair and no name tag, yours has `ml-key`. In the console, click **Refresh**: they are at the top of the list, above the images (AMIs).
+
+![Two instances](img/02-instances.png)
+
+```mermaid
+flowchart TB
+  subgraph VPC["Default VPC · 172.31.0.0/16 · account 000000000000"]
+    SN["Default subnet · us-east-1c"]
+    C["clic<br/>created in the console · no key pair"]
+    M["your instance<br/>created with the CLI · key pair ml-key"]
+  end
+  SN --- C
+  SN --- M
+```
+
+Both machines sit in the same subnet and show up in the same list, but they are separate: different instance IDs, different lifecycles, different keys.
+
+> **Could we attach `ml-key` to `clic` instead?** No. The key pair is fixed at launch, and `aws ec2 modify-instance-attribute` has no `--key-name` (the CLI answers `Unknown options`). The instance has to be recreated — here, terminate it and launch a new one with `--key-name ml-key`. In general, save it as an image first:
+>
+> ```bash
+> CLIC=$(aws ec2 describe-instances --filters Name=tag:Name,Values=clic --query 'Reservations[0].Instances[0].InstanceId' --output text)
+> AMI=$(aws ec2 create-image --instance-id $CLIC --name clic-with-key --no-reboot --query ImageId --output text)
+> aws ec2 wait image-available --image-ids $AMI
+> aws ec2 run-instances --image-id $AMI --instance-type t3.micro --key-name ml-key
+> ```
+>
+> On Floci only, the instance is a container, so on **your machine** (with `CLIC` set there, or its ID typed in full) you can write the public key straight into it:
+>
+> ```bash
+> ssh-keygen -y -f lab/ml-key.pem | docker exec -i floci-aws-ec2-$CLIC sh -c 'cat >> /root/.ssh/authorized_keys'
+> ```
+
+Terminate `clic` in the console: bin icon on its row, then **Confirm**.
+
+![Terminate an instance](img/02-terminate.png)
+
+> `ID` only lives in this terminal. If you closed it, get it back with:
+> `ID=$(aws ec2 describe-instances --filters Name=instance-state-name,Values=running Name=key-name,Values=ml-key --query 'Reservations[0].Instances[0].InstanceId' --output text)`
+
+## 4. Get into the machine
+
+In the **work terminal**, get the instance's IP address:
+
+```bash
+IP=$(aws ec2 describe-instances --instance-ids $ID --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
+```
+
+Copy the script and the data to the instance (`root@$IP:` means the home folder of `root` on the instance). The SSH server needs about 30 s after launch: if you get `Connection refused`, wait and try again.
+
+```bash
+scp -i lab/ml-key.pem scoring/score.py data/customers.csv root@$IP:
+```
+
+Open a session on the instance:
+
+```bash
+ssh -i lab/ml-key.pem root@$IP
+```
+
+The prompt changes to `[root@… ~]#`: you are **on the EC2 instance**. Run the same script there:
+
+```bash
+python3 score.py customers.csv out.csv && cat out.csv
+```
+
+<details>
+<summary><strong>Why does it work without installing anything?</strong></summary>
+
+`score.py` only imports `csv`, `io` and `sys`: three modules of Python's **standard library**, shipped with the interpreter. Nothing to download, so nothing to install.
+
+An installation is only needed for a third-party package (`pandas`, `numpy`, `boto3`…). That is what `pip install` is for, and it is exactly what step 3 brings with boto3.
+
+And `python3` is already there because the **AMI** provides it: Amazon Linux 2023 ships Python 3.9, `ssh`, `scp`… That is the AMI's job seen in step 2 — OS and preinstalled tools — not your code's.
+
+</details>
+
+Back to the work terminal:
+
+```bash
+exit
+```
+
+## 5. Destroy the machine
 
 In the **work terminal**:
 
 ```bash
-aws s3 ls --profile alice
+aws ec2 terminate-instances --instance-ids $ID
 ```
 
-No error (and no output: there is no bucket yet). The console does not show a user's policies; check them from the command line:
-
-```bash
-aws iam list-user-policies --user-name alice
-```
-
-```
-"PolicyNames": ["list-buckets"]
-```
-
-## 7. Compare with a policy written by AWS
-
-In the **work terminal**:
-
-```bash
-aws iam get-policy-version --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess --version-id v3
-```
-
-`s3:Get*` and `s3:List*` on `*`: read access to **every** bucket of the account. Handy to get started, too broad for production.
-
-> **Takeaway**: no policy, no rights. A policy is actions (`service:Action`) on resources (ARNs). Start narrow, and only add what a real denial asks for.
+> **Takeaway**: `out.csv` disappeared with the machine, and the machine was billed every second, even unused. Two problems the next tutorials solve.
+>
+> *Floci*: the instance is a Docker container; the work terminal reaches it on its private IP. On AWS you would go through a public IP or a bastion.
 
 ---
 
 *Intro to the cloud for ML engineers* — the same scoring script, moved to the cloud on a local AWS (Floci).
 
-All tutorials: [`main`](https://github.com/ssime-git/intro-cloud-mlops) · This branch: `step-1-identity` · Next: `make step S=step-2-ec2`
+All tutorials: [`main`](https://github.com/ssime-git/intro-cloud-mlops) · This branch: `step-2-ec2` · Next: `make step S=step-3-s3-role`
