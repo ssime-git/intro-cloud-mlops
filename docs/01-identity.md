@@ -35,17 +35,43 @@ Alice shows up with her ARN, her unique identifier in AWS:
 
 ## 2. Find her from the command line
 
-In the **work terminal**, who am I? Without any option, the CLI uses the work terminal's default keys, which belong to the account administrator (`root`):
+Two different questions, two different commands.
+
+**Who am I?** `sts` is the Security Token Service: the AWS service that answers "which identity signed this request?". `get-caller-identity` takes no argument; it returns the principal behind the keys the CLI used. Without any option, the CLI uses the work terminal's default keys, which belong to the account administrator (`root`):
 
 ```bash
 aws sts get-caller-identity
 ```
 
-Alice, created with the mouse, seen from the terminal (same ARN as in the console):
+```
+"Arn": "arn:aws:iam::000000000000:root"
+```
+
+`root` is not a user someone created: it is the account itself, with full rights and no policy to attach.
+
+**Does Alice exist?** `aws iam get-user` looks up an object by name. It does not say who is calling:
 
 ```bash
 aws iam get-user --user-name alice
 ```
+
+```
+"Arn": "arn:aws:iam::000000000000:user/alice"
+```
+
+Same ARN as in the console. To see every identity of the account instead of one:
+
+```bash
+aws iam list-users --query 'Users[].UserName' --output text
+```
+
+```
+alice
+```
+
+**Reading an ARN.** `arn:aws:iam::000000000000:user/alice` is `arn` (an AWS name), `aws` (the partition), `iam` (the service), an empty region (IAM is global), `000000000000` (the account), `user/alice` (the resource). `root` and `alice` share the account id and nothing else: two distinct identities in the same account.
+
+> The console's identity page shows Alice's **record** (her ARN), not the caller. `get-caller-identity` shows the **caller**. That is why one screen says `alice` and the other `root`.
 
 ## 3. Give Alice access keys
 
@@ -91,6 +117,8 @@ aws sts get-caller-identity --profile alice
 ```
 "Arn": "arn:aws:iam::000000000000:user/alice"
 ```
+
+`--profile` is not an AWS API parameter: it is an option of the CLI itself, read before the request is sent. It tells the CLI which keys to load from `~/.aws/credentials`, then signs with them. The service (here `sts`) never sees it.
 
 > The profile lives in the container: `make reset-step`, `make reset-all` or `make down` delete it.
 
